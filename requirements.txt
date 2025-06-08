@@ -1,0 +1,7 @@
+The following pip packages are required:
+
+numpy
+scipy
+matplotlib
+seaborn
+pickle
