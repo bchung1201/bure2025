@@ -79,7 +79,7 @@ for m in range(M):
                         chosenPackets[k] = np.random.choice(servers[k])
                         buffers[k] = chosenPackets[k]
                         for j in range(len(costs[chosenPackets[k]])):
-                            if accessibleServers[j] == k:
+                            if accessibleServers[chosenPackets[k]][j] == k:
                                 costs[chosenPackets[k]][j] = -1
                                 #updates weights
                                 queue = chosenPackets[k]

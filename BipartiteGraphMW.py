@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 
-T = 2500
+T = 5000
 # sample = 200
 sample = 100
 M = 10
@@ -74,12 +74,12 @@ for m in range(M):
                         buffers[k] = chosenPackets[k]
                         priorities = np.random.permutation(numQueues)
                         for j in range(len(costs[chosenPackets[k]])):
-                            if accessibleServers[j] == k:
+                            if accessibleServers[chosenPackets[k]][j] == k:
                                 costs[chosenPackets[k]][j] = -1
 
                         for q in range(len(priorities)):
                             for j in range(len(costs[priorities[q]])):
-                                if accessibleServers[j] == k:
+                                if accessibleServers[chosenPackets[k]][j] == k:
                                     costs[priorities[q]][j] = -1
                                     break
                             if priorities[q] == chosenPackets[k]:
