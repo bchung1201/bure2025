@@ -3,23 +3,28 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 from numba import jit
+from numba.typed import List
 
-T = 50000
+T = 150000
 sample = 200
 stepsize = 0.01
-numQueues = 2
+numQueues = 1
 numServers = 2
-M = 10
+M = 1
 
-inputRates = np.array([0.30, 0.30])
-processRates = np.array([0.6, 0.2])
+inputRates = np.array([0.55])
+processRates = np.array([0.3, 0.3])
 
 # Define accessible servers for each queue
-accessibleServers = [[0], [0, 1]]
+accessibleServers = [[0, 1]]
+#numba doesn't directly support 2D lists, have to use special List() and copy over
+numba_accessibleServers = List()
+for lst in accessibleServers:
+    numba_accessibleServers.append(lst)
 
-@jit(nopython=True) 
-def run_fixed_routing_simulation(inputRates, processRates, T, numQueues, numServers,
-                                arrivals, routing_randoms, processed_batch):
+@jit(nopython=True)
+#passing in all the global variables again as locals is required for jit to work properly
+def run_fixed_routing_simulation(inputRates, processRates, T, numQueues, numServers, numba_accessibleServers):
     """Fixed routing simulation - no learning, just fixed probabilities"""
     
     queues = np.zeros(numQueues)
@@ -27,22 +32,19 @@ def run_fixed_routing_simulation(inputRates, processRates, T, numQueues, numServ
     
     for t in range(T):
         # Arrivals
-        queues += arrivals[:, t]
-        
-        # Server selection with FIXED routing probabilities
+        for i in range(numQueues):
+            queues[i] += np.random.binomial(1, inputRates[i])
+
+        #server selection
         chosen_servers = np.full(numQueues, -1, dtype=np.int32)
-        
-        # Queue 0: Can only access server 0, so always send there
-        if queues[0] > 0:
-            chosen_servers[0] = 0
-        
-        #Queue 1: Can access servers 0 and 1, send with 0.5 probability to each
-        if queues[1] > 0:
-            chosen_servers[1] = np.random.randint(0, 2)
-        
-        # Use pre-generated processing outcomes
-        processed = processed_batch[:, t]
-        chosen_packets = np.full(numServers, -1, dtype=np.int32)
+        for i in range(numQueues):
+            if queues[i] > 0:
+                chosen_servers[i] = numba_accessibleServers[i][np.random.randint(len(numba_accessibleServers[i]))]
+
+        processed = [-1 for i in range(numServers)]
+
+        for i in range(numServers):
+            processed[i] = np.random.binomial(1, processRates[i])
 
         for k in range(numServers):
             # Find which queues sent packets to this server
@@ -52,24 +54,18 @@ def run_fixed_routing_simulation(inputRates, processRates, T, numQueues, numServ
                     sending_queues.append(q)
             
             # Handle buffer logic
-            chosen_queue = -1
             if len(sending_queues) > 0:
                 if buffers[k] == -1:  # Buffer empty
                     # Randomly accept one packet
                     idx = np.random.randint(len(sending_queues))
                     chosen_queue = sending_queues[idx]
                     buffers[k] = chosen_queue
+                    queues[chosen_queue] -= 1 #Remove from queue
 
                 # Accept packet into buffer
 
-            if len(sending_queues) > 0 and buffers[k] == -1:
-                idx = np.random.randint(len(sending_queues))
-                chosen_queue = sending_queues[idx]
-                buffers[k] = chosen_queue
-
             # Process buffer and remove packet only if successful
             if buffers[k] != -1 and processed[k] == 1:
-                queues[buffers[k]] -= 1  # Remove from queue when actually processed
                 buffers[k] = -1
 
 
@@ -86,28 +82,11 @@ ratioArr = np.empty(M)
 
 for m in range(M):
     print(f"Reached m: {m}")
-    inputRates += 0.01
+    inputRates += 0
     buildup = np.empty(sample)
     ratioArr[m] = sum(inputRates) / sum(processRates)
-    
-    # Pre-generate random numbers for this ratio
-    arrivals_batch = np.random.binomial(1, inputRates[:, np.newaxis, np.newaxis], 
-                                       size=(numQueues, sample, T))
-    routing_randoms_batch = np.random.random(size=(numQueues, sample, T))
-    processed_batch = np.random.binomial(1, processRates[:, np.newaxis, np.newaxis], 
-                                        size=(numServers, sample, T))
-    
     for r in range(sample):
-        # Extract pre-generated randoms for this sample
-        arrivals = arrivals_batch[:, r, :]
-        routing_randoms = routing_randoms_batch[:, r, :]
-        processed = processed_batch[:, r, :]
-        
-        sumBuildup = run_fixed_routing_simulation(
-            inputRates, processRates, T, numQueues, numServers,
-            arrivals, routing_randoms, processed
-        )
-        
+        sumBuildup = run_fixed_routing_simulation(inputRates, processRates, T, numQueues, numServers, numba_accessibleServers)
         buildup[r] = sumBuildup / (T * numQueues)
 
     avgBuildup[m] = np.mean(buildup)
