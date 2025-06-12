@@ -9,16 +9,22 @@ T = 150000
 rate = 1 / math.sqrt(T)
 gamma = rate
 
-useTimeStamps = True
+useTimeStamps = False
 
 sample = 200
 stepsize = 0.01
 numQueues = 2
 numServers = 2
+
 M = 20
+
+#0.01 means all input rates increase by 1% each m in M (additive, not multiplicative)
+inputRateStepSize = 0.01 
 
 inputRates = np.array([0.24, 0.24])
 processRates = np.array([0.6, 0.2])
+
+inputRateStep = np.array([inputRateStepSize*inputRates[i] for i in range(numQueues)])
 
 # Create typed list for numba - need to specify type since lists are empty
 from numba import types
@@ -159,7 +165,8 @@ ratioArr = np.empty(M)
 
 for m in range(M):
     print(f"Reached m: {m}")
-    inputRates += 0.01
+    if m > 0:
+        inputRates += inputRateStep
     buildup = np.empty(sample)
     ratioArr[m] = sum(inputRates) / sum(processRates)
     
