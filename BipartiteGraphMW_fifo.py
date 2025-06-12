@@ -42,19 +42,6 @@ def sample_from_weights(weights, random_val):
     return np.searchsorted(cumsum, random_val * cumsum[-1])
 
 @jit(nopython=True)
-def find_oldest_packet_index(timestamps, valid_count):
-    """Find index of oldest packet among valid packets"""
-    if valid_count == 0:
-        return -1
-    oldest_idx = 0
-    oldest_time = timestamps[0]
-    for i in range(1, valid_count):
-        if timestamps[i] < oldest_time:
-            oldest_time = timestamps[i]
-            oldest_idx = i
-    return oldest_idx
-
-@jit(nopython=True)
 def run_mw_fifo_simulation(inputRates, processRates, T, learning_rate, numQueues, numServers,
                            arrivals, weight_randoms, processed_batch,
                            accessible_matrix, accessible_lengths):
@@ -66,9 +53,11 @@ def run_mw_fifo_simulation(inputRates, processRates, T, learning_rate, numQueues
         for i in range(accessible_lengths[q]):
             weights[q, i] = 1.0 / accessible_lengths[q]
     
-    # FIFO queue data structures
+    # FIFO queue data structures using circular buffers
     queue_timestamps = np.full((numQueues, MAX_QUEUE_SIZE), -1, dtype=np.int32)
-    queue_counts = np.zeros(numQueues, dtype=np.int32)
+    queue_heads = np.zeros(numQueues, dtype=np.int32)  # Points to oldest packet
+    queue_tails = np.zeros(numQueues, dtype=np.int32)  # Points to next insertion spot
+    queue_sizes = np.zeros(numQueues, dtype=np.int32)  # Current queue sizes
     
     # Server buffers: store timestamp of packet in buffer (-1 if empty)
     buffer_timestamps = np.full(numServers, -1, dtype=np.int32)
@@ -78,20 +67,21 @@ def run_mw_fifo_simulation(inputRates, processRates, T, learning_rate, numQueues
         # Arrivals - add to end of FIFO queues
         for q in range(numQueues):
             if arrivals[q, t] == 1:
-                if queue_counts[q] < MAX_QUEUE_SIZE:
-                    queue_timestamps[q, queue_counts[q]] = t
-                    queue_counts[q] += 1
+                if queue_sizes[q] < MAX_QUEUE_SIZE:
+                    queue_timestamps[q, queue_tails[q]] = t
+                    queue_tails[q] = (queue_tails[q] + 1) % MAX_QUEUE_SIZE
+                    queue_sizes[q] += 1
         
         # Server selection for active queues
         chosen_servers = np.full(numQueues, -1, dtype=np.int32)
         costs = np.zeros((numQueues, max_accessible))
         
-        # Packets sent to servers this timestep
-        server_packet_timestamps = np.full((numServers, numQueues), -1, dtype=np.int32)
-        server_packet_counts = np.zeros(numServers, dtype=np.int32)
+        # Track packets sent to each server: (timestamp, queue_id) pairs
+        server_arrivals = np.full((numServers, numQueues, 2), -1, dtype=np.int32)
+        server_arrival_counts = np.zeros(numServers, dtype=np.int32)
         
         for q in range(numQueues):
-            if queue_counts[q] > 0:
+            if queue_sizes[q] > 0:
                 accessible_count = accessible_lengths[q]
                 # Weighted choice from accessible servers (no noise in MW)
                 active_weights = weights[q, :accessible_count]
@@ -99,51 +89,52 @@ def run_mw_fifo_simulation(inputRates, processRates, T, learning_rate, numQueues
                 chosen_servers[q] = accessible_matrix[q, server_idx]
                 
                 server = chosen_servers[q]
-                # Send oldest packet (FIFO) - packet at index 0
-                oldest_timestamp = queue_timestamps[q, 0]
-                server_packet_timestamps[server, server_packet_counts[server]] = oldest_timestamp
-                server_packet_counts[server] += 1
+                # Get oldest packet timestamp (but don't remove it yet!)
+                oldest_timestamp = queue_timestamps[q, queue_heads[q]]
                 
-                # Remove oldest packet from queue (shift array left)
-                for i in range(queue_counts[q] - 1):
-                    queue_timestamps[q, i] = queue_timestamps[q, i + 1]
-                queue_counts[q] -= 1
+                # Record this packet as sent to the server
+                arrival_idx = server_arrival_counts[server]
+                server_arrivals[server, arrival_idx, 0] = oldest_timestamp  # timestamp
+                server_arrivals[server, arrival_idx, 1] = q  # queue id
+                server_arrival_counts[server] += 1
         
         # Use pre-generated processing outcomes
         processed = processed_batch[:, t]
         
         for k in range(numServers):
             # Handle buffer logic
-            if server_packet_counts[k] > 0:
+            chosen_queue = -1
+            if server_arrival_counts[k] > 0:
                 if buffer_timestamps[k] == -1:  # Buffer empty
                     # Find oldest packet among all packets sent to this server
-                    oldest_idx = find_oldest_packet_index(
-                        server_packet_timestamps[k, :server_packet_counts[k]], 
-                        server_packet_counts[k]
-                    )
-                    oldest_timestamp = server_packet_timestamps[k, oldest_idx]
+                    oldest_timestamp = server_arrivals[k, 0, 0]
+                    oldest_queue = server_arrivals[k, 0, 1]
                     
-                    # Find which queue this packet came from
-                    chosen_queue = -1
-                    for q in range(numQueues):
-                        if chosen_servers[q] == k:
-                            chosen_queue = q
-                            break
+                    for i in range(1, server_arrival_counts[k]):
+                        if server_arrivals[k, i, 0] < oldest_timestamp:
+                            oldest_timestamp = server_arrivals[k, i, 0]
+                            oldest_queue = server_arrivals[k, i, 1]
                     
+                    chosen_queue = oldest_queue
                     buffer_timestamps[k] = oldest_timestamp
                     buffer_queue_ids[k] = chosen_queue
                     
                     # Set cost for MW algorithm
-                    if chosen_queue != -1:
-                        for j in range(accessible_lengths[chosen_queue]):
-                            if accessible_matrix[chosen_queue, j] == k:
-                                costs[chosen_queue, j] = -1.0
-                                break
+                    for j in range(accessible_lengths[chosen_queue]):
+                        if accessible_matrix[chosen_queue, j] == k:
+                            costs[chosen_queue, j] = -1.0
+                            break
             
             # Process buffer if packet present
             if buffer_timestamps[k] != -1 and processed[k] == 1:
                 buffer_timestamps[k] = -1
                 buffer_queue_ids[k] = -1
+            
+            # Remove packet from queue ONLY if it was accepted
+            if chosen_queue != -1:
+                # Remove oldest packet from the chosen queue
+                queue_heads[chosen_queue] = (queue_heads[chosen_queue] + 1) % MAX_QUEUE_SIZE
+                queue_sizes[chosen_queue] -= 1
         
         # Update weights using MW algorithm
         for q in range(numQueues):
@@ -160,7 +151,7 @@ def run_mw_fifo_simulation(inputRates, processRates, T, learning_rate, numQueues
                 for j in range(accessible_lengths[q]):
                     weights[q, j] /= weight_sum
     
-    return np.sum(queue_counts)
+    return np.sum(queue_sizes)
 
 ##################
 ###WITH BUFFERS###
@@ -212,5 +203,5 @@ ax2.axvline(x=1/3, color='red', linestyle='--')
 ax2.axvline(x=0.5, color='green', linestyle=':')
 ax2.set_xlabel('Arrival to capacity ratio', fontsize=14)
 ax2.set_ylabel('Build Up', fontsize=14)
-plt.title('Bipartite Graph MW - FIFO Optimized')
+plt.title('Bipartite Graph MW - FIFO Optimized (Fixed)')
 plt.show()
