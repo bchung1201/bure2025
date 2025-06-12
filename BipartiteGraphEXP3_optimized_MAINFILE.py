@@ -9,6 +9,8 @@ T = 150000
 rate = 1 / math.sqrt(T)
 gamma = rate
 
+useTimeStamps = True
+
 sample = 200
 stepsize = 0.01
 numQueues = 2
@@ -48,7 +50,7 @@ def sample_from_weights(weights, random_val):
 @jit(nopython=True) 
 def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numServers,
                             noise_choices, weight_randoms,
-                            accessible_matrix, accessible_lengths, queues):
+                            accessible_matrix, accessible_lengths, queues, useTimeStamps):
     """Optimized bipartite simulation with JIT compilation"""
     
     # Initialize weights - different sizes for each queue
@@ -68,7 +70,10 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
         for q in range(numQueues):
             rng = np.random.binomial(1, inputRates[q])
             if rng == 1:
-                queues[q].append(t)
+                if useTimeStamps:
+                    queues[q].append(t)
+                else:
+                    queues[q].append(1)
         
         # Server selection for active queues
         chosen_servers = np.full(numQueues, -1, dtype=np.int32)
@@ -170,7 +175,7 @@ for m in range(M):
         sumBuildup = run_bipartite_simulation(
             inputRates, processRates, T, gamma, numQueues, numServers,
             noise_choices, weight_randoms,
-            accessible_matrix, accessible_lengths, queues
+            accessible_matrix, accessible_lengths, queues, useTimeStamps
         )
         
         buildup[r] = sumBuildup / (T * numQueues)
