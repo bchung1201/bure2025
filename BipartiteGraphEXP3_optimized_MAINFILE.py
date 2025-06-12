@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 from numba import jit
+from numba.typed import List
 
 T = 150000
 rate = 1 / math.sqrt(T)
@@ -14,8 +15,14 @@ numQueues = 2
 numServers = 2
 M = 20
 
-inputRates = np.array([0.28, 0.28])
+inputRates = np.array([0.24, 0.24])
 processRates = np.array([0.6, 0.2])
+
+# Create typed list for numba - need to specify type since lists are empty
+from numba import types
+queues = List()
+for i in range(numQueues):
+    queues.append(List.empty_list(types.int32))
 
 # Define accessible servers for each queue
 accessibleServers = [[0], [0, 1]]
@@ -40,8 +47,8 @@ def sample_from_weights(weights, random_val):
 
 @jit(nopython=True) 
 def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numServers,
-                            arrivals, noise_choices, weight_randoms, processed_batch,
-                            accessible_matrix, accessible_lengths):
+                            noise_choices, weight_randoms,
+                            accessible_matrix, accessible_lengths, queues):
     """Optimized bipartite simulation with JIT compilation"""
     
     # Initialize weights - different sizes for each queue
@@ -49,20 +56,26 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
     for q in range(numQueues):
         for i in range(accessible_lengths[q]):
             weights[q, i] = 1.0 / accessible_lengths[q]
-    
-    queues = np.zeros(numQueues)
+
     buffers = np.full(numServers, -1, dtype=np.int32)
+    
+    # Reset queues at start of each simulation
+    for q in range(numQueues):
+        queues[q].clear()
     
     for t in range(T):
         # Arrivals
-        queues += arrivals[:, t]
+        for q in range(numQueues):
+            rng = np.random.binomial(1, inputRates[q])
+            if rng == 1:
+                queues[q].append(t)
         
         # Server selection for active queues
         chosen_servers = np.full(numQueues, -1, dtype=np.int32)
         costs = np.zeros((numQueues, max_accessible))
         
         for q in range(numQueues):
-            if queues[q] > 0:
+            if len(queues[q]) > 0:
                 accessible_count = accessible_lengths[q]
                 
                 if noise_choices[q, t]:
@@ -74,10 +87,6 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
                     active_weights = weights[q, :accessible_count]
                     server_idx = sample_from_weights(active_weights, weight_randoms[q, t])
                     chosen_servers[q] = accessible_matrix[q, server_idx]
-        
-        # Use pre-generated processing outcomes
-        processed = processed_batch[:, t]
-        chosen_packets = np.full(numServers, -1, dtype=np.int32)
         
         for k in range(numServers):
             # Find which queues sent packets to this server
@@ -91,8 +100,15 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
             if len(sending_queues) > 0:
                 if buffers[k] == -1:  # Buffer empty
                     # Randomly accept one packet
-                    idx = np.random.randint(len(sending_queues))
-                    chosen_queue = sending_queues[idx]
+                    oldest_queues = []
+                    min_time = T+1
+                    for q in sending_queues:
+                        min_time = min(min_time, queues[q][0])
+                    for q in sending_queues:
+                        if queues[q][0] == min_time:
+                            oldest_queues.append(q)
+                    idx = np.random.randint(len(oldest_queues))
+                    chosen_queue = oldest_queues[idx]
                     buffers[k] = chosen_queue
                     
                     # FIXED: Correct weight update logic
@@ -107,12 +123,12 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
                             break
             
             # Process buffer if packet present
-            if buffers[k] != -1 and processed[k] == 1:
+            if buffers[k] != -1 and np.random.binomial(1, processRates[k]) == 1:
                 buffers[k] = -1
             
             # Remove packet if it was accepted
             if chosen_queue != -1:
-                queues[chosen_queue] -= 1
+                queues[chosen_queue].pop(0)
         
         # Normalize weights for all queues
         for q in range(numQueues):
@@ -122,8 +138,10 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
             if weight_sum > 0:
                 for j in range(accessible_lengths[q]):
                     weights[q, j] /= weight_sum
-    
-    return np.sum(queues)
+    res = 0
+    for q in range(numQueues):
+        res += len(queues[q])
+    return res
 
 ##################
 ###WITH BUFFERS###
@@ -141,24 +159,18 @@ for m in range(M):
     ratioArr[m] = sum(inputRates) / sum(processRates)
     
     # Pre-generate random numbers for this ratio
-    arrivals_batch = np.random.binomial(1, inputRates[:, np.newaxis, np.newaxis], 
-                                       size=(numQueues, sample, T))
     noise_choices_batch = np.random.binomial(1, gamma, size=(numQueues, sample, T))
     weight_randoms_batch = np.random.random(size=(numQueues, sample, T))
-    processed_batch = np.random.binomial(1, processRates[:, np.newaxis, np.newaxis], 
-                                        size=(numServers, sample, T))
     
     for r in range(sample):
         # Extract pre-generated randoms for this sample
-        arrivals = arrivals_batch[:, r, :]
         noise_choices = noise_choices_batch[:, r, :]
         weight_randoms = weight_randoms_batch[:, r, :]
-        processed = processed_batch[:, r, :]
         
         sumBuildup = run_bipartite_simulation(
             inputRates, processRates, T, gamma, numQueues, numServers,
-            arrivals, noise_choices, weight_randoms, processed,
-            accessible_matrix, accessible_lengths
+            noise_choices, weight_randoms,
+            accessible_matrix, accessible_lengths, queues
         )
         
         buildup[r] = sumBuildup / (T * numQueues)
