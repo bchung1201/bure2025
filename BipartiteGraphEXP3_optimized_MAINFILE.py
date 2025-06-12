@@ -5,24 +5,32 @@ import math
 from numba import jit
 from numba.typed import List
 
-T = 150000
+T = 50000
 rate = 1 / math.sqrt(T)
 gamma = rate
 
-useTimeStamps = False
+useTimeStamps = True
 
 sample = 200
 stepsize = 0.01
 numQueues = 2
-numServers = 2
+numServers = 1
 
-M = 20
+M = 13
 
 #0.01 means all input rates increase by 1% each m in M (additive, not multiplicative)
-inputRateStepSize = 0.01 
+inputRateStepSize = 0.01
 
-inputRates = np.array([0.24, 0.24])
-processRates = np.array([0.6, 0.2])
+inputRates = np.array([0.36, 0.36])
+processRates = np.array([0.8])
+
+# Define accessible servers for each queue
+accessibleServers = [[0], [0]]
+
+########################################################
+###AFTER HERE THERE ARE NO MORE CHANGEABLE PARAMETERS###
+########################################################
+
 
 inputRateStep = np.array([inputRateStepSize*inputRates[i] for i in range(numQueues)])
 
@@ -31,9 +39,6 @@ from numba import types
 queues = List()
 for i in range(numQueues):
     queues.append(List.empty_list(types.int32))
-
-# Define accessible servers for each queue
-accessibleServers = [[0], [0, 1]]
 
 # Pre-compute mapping for optimization
 max_accessible = max(len(servers) for servers in accessibleServers)
@@ -203,3 +208,6 @@ ax2.set_xlabel('Arrival to capacity ratio', fontsize=14)
 ax2.set_ylabel('Build Up', fontsize=14)
 plt.title('Bipartite Graph EXP3 - Optimized')
 plt.show()
+
+print("ratioArr: ", ratioArr)
+print("avgBuildup", avgBuildup)
