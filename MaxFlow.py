@@ -10,6 +10,36 @@ processRates = np.array([0.3, .5])
 # Define accessible servers for each queue
 accessibleServers = [[0], [0,1]]
 
+ratio = 0
+
+#x * sum_A lambda_i <= sum_neighbors(A) mu_i
+#want to minimize x across cuts.
+#bsearch on 1/x
+def binary_search():
+    def is_possible(x):
+        scaled_input_rates = x * inputRates
+        flow = max_flow(scaled_input_rates, processRates, accessibleServers)
+        total_input = np.sum(scaled_input_rates)
+        return flow >= total_input
+    
+    #bsearch on 1/x
+    left = 1e-6
+    right = 1.0
+    epsilon = 1e-8
+    
+    while right - left > epsilon:
+        mid = (left + right) / 2
+        x = 1.0 / mid
+        
+        if is_possible(x):
+            right = mid  #x works, we can increase x, so 1/x shrinks
+        else:
+            left = mid   #opposite
+    
+    optimal_x = 1.0 / right
+    return optimal_x
+
+
 def max_flow(inputRates, processRates, accessibleServers):
     """
     Find maximum flow through router-server network using Edmonds-Karp algorithm.
@@ -91,9 +121,25 @@ def max_flow(inputRates, processRates, accessibleServers):
     return max_flow_value
 
 # Calculate and print the maximum flow
-max_flow = max_flow(inputRates, processRates, accessibleServers)
-print(f"Maximum flow through the network: {max_flow}")
+flow_result = max_flow(inputRates, processRates, accessibleServers)
+print(f"Maximum flow through the network: {flow_result}")
 print(f"Input rates: {inputRates}")
 print(f"Process rates: {processRates}")
 print(f"Accessible servers: {accessibleServers}")
+
+# Find optimal x using binary search
+optimal_x = binary_search()
+print(f"\nOptimal x (maximum scaling factor): {optimal_x}")
+print(f"This means the constraint x * sum_A lambda_i <= sum_neighbors(A) mu_i")
+print(f"is satisfied for all cuts A when x <= {optimal_x}")
+
+# Verify the result
+scaled_rates = optimal_x * inputRates
+scaled_flow = max_flow(scaled_rates, processRates, accessibleServers)
+total_scaled_input = np.sum(scaled_rates)
+print(f"\nVerification:")
+print(f"Scaled input rates: {scaled_rates}")
+print(f"Max flow with scaled rates: {scaled_flow}")
+print(f"Total scaled input: {total_scaled_input}")
+print(f"Flow >= Input: {scaled_flow >= total_scaled_input}")
 
