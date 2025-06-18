@@ -12,7 +12,6 @@ gamma = rate
 useTimeStamps = True
 
 sample = 200
-stepsize = 0.01
 numQueues = 2
 numServers = 1
 
@@ -30,7 +29,6 @@ accessibleServers = [[0], [0]]
 ########################################################
 ###AFTER HERE THERE ARE NO MORE CHANGEABLE PARAMETERS###
 ########################################################
-
 
 inputRateStep = np.array([inputRateStepSize*inputRates[i] for i in range(numQueues)])
 
@@ -178,7 +176,7 @@ for m in range(M):
     # Pre-generate random numbers for this ratio
     noise_choices_batch = np.random.binomial(1, gamma, size=(numQueues, sample, T))
     weight_randoms_batch = np.random.random(size=(numQueues, sample, T))
-    
+
     for r in range(sample):
         # Extract pre-generated randoms for this sample
         noise_choices = noise_choices_batch[:, r, :]
