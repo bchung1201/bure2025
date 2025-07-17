@@ -4,11 +4,11 @@ import seaborn as sns
 import math
 from collections import deque
 
-inputRates = np.array([0.2, 0.2])
-processRates = np.array([0.3, .5])
+inputRates = np.array([0.1, 0.5, 0.7])
+processRates = np.array([0.3, 0.9, 0.6])
 
 # Define accessible servers for each queue
-accessibleServers = [[0], [0,1]]
+accessibleServers = [[0, 1], [0, 2], [1]]
 
 ratio = 0
 
@@ -20,7 +20,9 @@ def binary_search():
         scaled_input_rates = x * inputRates
         flow = max_flow(scaled_input_rates, processRates, accessibleServers)
         total_input = np.sum(scaled_input_rates)
-        return flow >= total_input
+        epsilon = 0.00000001
+
+        return flow + epsilon >= total_input
     
     #bsearch on 1/x
     left = 1e-6
@@ -143,3 +145,4 @@ print(f"Max flow with scaled rates: {scaled_flow}")
 print(f"Total scaled input: {total_scaled_input}")
 print(f"Flow >= Input: {scaled_flow >= total_scaled_input}")
 
+print(max_flow(1.4*inputRates, processRates, accessibleServers))
