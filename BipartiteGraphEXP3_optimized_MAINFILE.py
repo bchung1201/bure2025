@@ -12,7 +12,7 @@ gamma = rate
 useTimeStamps = False
 
 sample = 200
-numQueues = 1
+numQueues = 2
 numServers = 2
 
 M = 26
@@ -20,14 +20,14 @@ M = 26
 # 0.01 means all input rates increase by 1% each m in M (additive, not multiplicative)
 inputRateStepSize = 0.04
 
-inputRates = np.array([0.4])
-processRates = np.array([0.3, 0.5])
+inputRates = np.array([0.05, 0.4])
+processRates = np.array([0.4, 0.7])
 
 # Define accessible servers for each queue
-accessibleServers = [[0, 1]]
+accessibleServers = [[0], [0, 1]]
 
 # Starting queue sizes - number of packets each queue starts with
-startingQueues = np.array([0])
+startingQueues = np.array([0,0])
 
 ########################################################
 ###AFTER HERE THERE ARE NO MORE CHANGEABLE PARAMETERS###

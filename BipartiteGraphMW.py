@@ -4,20 +4,22 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 
-T = 5000
+T = 150000
 # sample = 200
-sample = 100
+sample = 200
 M = 10
 
+sample = 200
 stepsize = 0.01
-numQueues = 1
-numServers = 1
+numQueues = 2
+numServers = 2
+M = 20
 
 learning_rate = math.sqrt(math.log(numServers) / T)
 
-inputRates = np.array([0.4])
-processRates = np.array([0.6])
-accessibleServers = [[0]]
+inputRates = np.array([0.3, 0.5])
+processRates = np.array([0.5, 0.4])
+accessibleServers = [[0], [0, 1]]
 
 ##################
 ###WITH BUFFERS###
