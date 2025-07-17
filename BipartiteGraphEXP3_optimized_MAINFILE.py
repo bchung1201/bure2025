@@ -31,6 +31,8 @@ lst2 = [[0, 1] for i in range(99)]
 lst2.append([1])
 accessibleServers = lst2
 
+startingQueues = np.array([0 for i in range(numQueues)])
+
 ########################################################
 ###AFTER HERE THERE ARE NO MORE CHANGEABLE PARAMETERS###
 ########################################################
@@ -40,6 +42,7 @@ inputRateStep[-1] = 0
 
 # Create typed list for numba - need to specify type since lists are empty
 from numba import types
+
 queues = List()
 for i in range(numQueues):
     queues.append(List.empty_list(types.int32))
@@ -53,6 +56,7 @@ for q in range(numQueues):
     accessible_lengths[q] = len(accessibleServers[q])
     for i, server in enumerate(accessibleServers[q]):
         accessible_matrix[q, i] = server
+
 
 @jit(nopython=True)
 def sample_from_weights(weights, random_val):
@@ -75,9 +79,19 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
 
     buffers = np.full(numServers, -1, dtype=np.int32)
 
+    # Track actual send rates: count how many times each queue sends to each server
+    # send_counts = np.zeros((numQueues, max_accessible), dtype=np.int32)
+    # total_sends = np.zeros(numQueues, dtype=np.int32)
+
     # Reset queues at start of each simulation
     for q in range(numQueues):
         queues[q].clear()
+        # Add starting packets to each queue
+        for _ in range(startingQueues[q]):
+            if useTimeStamps:
+                queues[q].append(0)  # All starting packets have timestamp 0
+            else:
+                queues[q].append(1)
 
     for t in range(T):
         # Arrivals
@@ -106,6 +120,10 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
                     active_weights = weights[q, :accessible_count]
                     server_idx = sample_from_weights(active_weights, np.random.random())
                     chosen_servers[q] = accessible_matrix[q, server_idx]
+
+                # Track that this queue sent to a server
+                # send_counts[q, server_idx] += 1
+                # total_sends[q] += 1
 
         for k in range(numServers):
             # Find which queues sent packets to this server
@@ -157,10 +175,23 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
             if weight_sum > 0:
                 for j in range(accessible_lengths[q]):
                     weights[q, j] /= weight_sum
+
+    # Compute actual send rates (percentage of times each queue sent to each server)
+    # actual_weights = np.zeros((numQueues, max_accessible))
+    # for q in range(numQueues):
+    #     if total_sends[q] > 0:
+    #         for i in range(accessible_lengths[q]):
+    #             actual_weights[q, i] = send_counts[q, i] / total_sends[q]
+    #     else:
+    #         # If no sends occurred, set equal weights for accessible servers
+    #         for i in range(accessible_lengths[q]):
+    #             actual_weights[q, i] = 1.0 / accessible_lengths[q]
+
     res = 0
     for q in range(numQueues):
         res += len(queues[q])
-    return res
+    return res, actual_weights
+
 
 ##################
 ###WITH BUFFERS###
@@ -170,6 +201,10 @@ avgBuildup = np.empty(M)
 buildup95 = np.empty(M)
 buildup5 = np.empty(M)
 ratioArr = np.empty(M)
+
+# Initialize weights accumulator for averaging across all trials
+# weights_accumulator = np.zeros((numQueues, max_accessible))
+# total_trials = 0
 
 for m in range(M):
     print(f"Reached m: {m}")
@@ -186,6 +221,10 @@ for m in range(M):
         )
 
         buildup[r] = sumBuildup / (T * numQueues)
+
+        # Accumulate weights for averaging
+        # weights_accumulator += weights
+        # total_trials += 1
 
     avgBuildup[m] = np.mean(buildup)
     buildup95[m] = np.percentile(buildup, 95)
@@ -206,3 +245,19 @@ plt.show()
 
 print("ratioArr: ", ratioArr)
 print("avgBuildup", avgBuildup)
+
+# Calculate and print average weights across all trials
+# if total_trials > 0:
+#     avg_weights = weights_accumulator / total_trials
+#     print(f"\nAverage weights across {total_trials} trials:")
+#     print("=" * 50)
+#
+#     for q in range(numQueues):
+#         print(f"Queue {q} -> Server weights:")
+#         for i in range(accessible_lengths[q]):
+#             server_id = accessible_matrix[q, i]
+#             weight_val = avg_weights[q, i]
+#             print(f"  Queue {q} -> Server {server_id}: {weight_val:.6f}")
+#         print()
+# else:
+#     print("No trials completed!")
