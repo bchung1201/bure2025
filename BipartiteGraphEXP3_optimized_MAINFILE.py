@@ -5,31 +5,36 @@ import math
 from numba import jit
 from numba.typed import List
 
-T = 50000
+T = 25000
 rate = 1 / math.sqrt(T)
 gamma = rate
 
-useTimeStamps = False
+useTimeStamps = True
 
-sample = 200
-numQueues = 100
-numServers = 2
+sample = 10
+numQueues = 350
+numServers = 350
 
-M = 20
+M = 24
 
 #0.01 means all input rates increase by 1% each m in M (additive, not multiplicative)
-inputRateStepSize = 0.16
+inputRateStepSize = 0.4
 
-lst = [0.001 for i in range(99)]
-lst.append(0.1)
-inputRates = np.array(lst)
+lst = [2/((numQueues-1)**(1/3))]
+for i in range(numQueues-1):
+    lst.append(1/((numQueues-1)**(1/3)))
+inputRates = np.array(lst) / 3
 
-processRates = np.array([0.4, 0.2])
+lst2 = [1.0]
+for i in range(numQueues-1):
+    lst2.append(0.5)
+processRates = np.array(lst2)
 
 # Define accessible servers for each queue
-lst2 = [[0, 1] for i in range(99)]
-lst2.append([1])
-accessibleServers = lst2
+lst3 = [[0]]
+for i in range(numQueues-1):
+    lst3.append([0, i+1])
+accessibleServers = lst3
 
 startingQueues = np.array([0 for i in range(numQueues)])
 
@@ -38,7 +43,6 @@ startingQueues = np.array([0 for i in range(numQueues)])
 ########################################################
 
 inputRateStep = np.array([inputRateStepSize*inputRates[i] for i in range(numQueues)])
-inputRateStep[-1] = 0
 
 # Create typed list for numba - need to specify type since lists are empty
 from numba import types
@@ -190,7 +194,8 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
     res = 0
     for q in range(numQueues):
         res += len(queues[q])
-    return res, actual_weights
+    return (res)
+            #, actual_weights)
 
 
 ##################
