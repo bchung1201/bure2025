@@ -9,17 +9,16 @@ T = 25000
 rate = 1 / math.sqrt(T)
 gamma = rate
 
-useTimeStamps = False
+useTimeStamps = True
 
-sample = 5
-numQueues = 500
-numServers = 500
+sample = 10
+numQueues = 350
+numServers = 350
 
-
-M = 8
+M = 24
 
 #0.01 means all input rates increase by 1% each m in M (additive, not multiplicative)
-inputRateStepSize = 1.2
+inputRateStepSize = 0.4
 
 lst = [2/((numQueues-1)**(1/3))]
 for i in range(numQueues-1):
@@ -61,6 +60,7 @@ for q in range(numQueues):
     accessible_lengths[q] = len(accessibleServers[q])
     for i, server in enumerate(accessibleServers[q]):
         accessible_matrix[q, i] = server
+
 
 @jit(nopython=True)
 def sample_from_weights(weights, random_val):
@@ -194,8 +194,8 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
     res = 0
     for q in range(numQueues):
         res += len(queues[q])
-    #return res, actual_weights
-    return res
+    return (res)
+            #, actual_weights)
 
 
 ##################
