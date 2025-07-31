@@ -9,17 +9,14 @@ T = 25000
 rate = 1 / math.sqrt(T)
 gamma = rate
 
-useTimeStamps = False
+sample = 10
+numQueues = 350
+numServers = 350
 
-sample = 5
-numQueues = 500
-numServers = 500
-
-
-M = 8
+M = 24
 
 #0.01 means all input rates increase by 1% each m in M (additive, not multiplicative)
-inputRateStepSize = 1.2
+inputRateStepSize = 0.4
 
 lst = [2/((numQueues-1)**(1/3))]
 for i in range(numQueues-1):
@@ -61,6 +58,7 @@ for q in range(numQueues):
     accessible_lengths[q] = len(accessibleServers[q])
     for i, server in enumerate(accessibleServers[q]):
         accessible_matrix[q, i] = server
+
 
 @jit(nopython=True)
 def sample_from_weights(weights, random_val):
@@ -194,8 +192,8 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
     res = 0
     for q in range(numQueues):
         res += len(queues[q])
-    #return res, actual_weights
-    return res
+    return (res)
+            #, actual_weights)
 
 
 ##################
@@ -222,10 +220,16 @@ for m in range(M):
         # Extract pre-generated randoms for this sample
         sumBuildup = run_bipartite_simulation(
             inputRates, processRates, T, gamma, numQueues, numServers,
-            accessible_matrix, accessible_lengths, queues, useTimeStamps
+            accessible_matrix, accessible_lengths, queues, False
+        )
+
+        sumBuildup2 = run_bipartite_simulation(
+            inputRates, processRates, T, gamma, numQueues, numServers,
+            accessible_matrix, accessible_lengths, queues, True
         )
 
         buildup[r] = sumBuildup / (T * numQueues)
+        buildup2[r] = sumBuildup2 / (T * numQueues)
 
         # Accumulate weights for averaging
         # weights_accumulator += weights
@@ -235,13 +239,20 @@ for m in range(M):
     buildup95[m] = np.percentile(buildup, 95)
     buildup5[m] = np.percentile(buildup, 5)
 
+    avgBuildup2[m] = np.mean(buildup2)
+    buildup952[m] = np.percentile(buildup2, 95)
+    buildup52[m] = np.percentile(buildup2, 5)
+
 print("Simulation complete! Generating plot...")
 
 # Generate Figure showing buildup in a bipartite system
 fig2, ax2 = plt.subplots()
-ax2.plot(ratioArr, avgBuildup)
-ax2.fill_between(ratioArr, buildup95, buildup5, alpha=0.1, color='blue')
-ax2.axvline(x=1/3, color='red', linestyle='--')
+ax2.plot(ratioArr, avgBuildup, color='red')
+ax2.plot(ratioArr, avgBuildup2, color='blue')
+ax2.fill_between(ratioArr, buildup95, buildup5, alpha=0.1, color='red')
+ax2.fill_between(ratioArr, buildup952, buildup52, alpha=0.1, color='blue')
+
+ax2.axvline(x=1/3, color='yellow', linestyle='--')
 ax2.axvline(x=0.5, color='green', linestyle=':')
 ax2.set_xlabel('Arrival to capacity ratio', fontsize=14)
 ax2.set_ylabel('Build Up', fontsize=14)
@@ -250,6 +261,7 @@ plt.show()
 
 print("ratioArr: ", ratioArr)
 print("avgBuildup", avgBuildup)
+print("avgBuildup2", avgBuildup2)
 
 # Calculate and print average weights across all trials
 # if total_trials > 0:
