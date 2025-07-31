@@ -201,8 +201,11 @@ def run_bipartite_simulation(inputRates, processRates, T, gamma, numQueues, numS
 ##################
 print("Starting optimized bipartite simulation...")
 avgBuildup = np.empty(M)
+avgBuildup2 = np.empty(M)
 buildup95 = np.empty(M)
+buildup952 = np.empty(M)
 buildup5 = np.empty(M)
+buildup52 = np.empty(M)
 ratioArr = np.empty(M)
 
 # Initialize weights accumulator for averaging across all trials
@@ -214,6 +217,7 @@ for m in range(M):
     if m > 0:
         inputRates += inputRateStep
     buildup = np.empty(sample)
+    buildup2 = np.empty(sample)
     ratioArr[m] = sum(inputRates) / sum(processRates)
 
     for r in range(sample):
